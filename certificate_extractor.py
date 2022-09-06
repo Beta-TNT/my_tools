@@ -30,13 +30,14 @@ if __name__== '__main__':
     
     for pkt in filter(lambda pkt:"tls" in pkt, FileCapture(pcapFile)):
         try:
+            tlsLayer = pkt['tls']
             if all(
                 [
-                    getattr(pkt['tls'], 'handshake_type', False) == '11', # Server Certificate
-                    hasattr(pkt['tls'], 'handshake_certificate') # Server Certificate binary
+                    getattr(tlsLayer, 'record_content_type', False) == '22', # Record Content type Handshake
+                    getattr(tlsLayer, 'handshake_type', False) == '11', # Handshake type Server Certificate
+                    hasattr(tlsLayer, 'handshake_certificate') # Server Certificate binary
                 ]
             ):
-                tlsLayer = pkt['tls']
                 certBin = bytes.fromhex(tlsLayer.handshake_certificate.replace(':',""))
                 certMd5 = md5(certBin).hexdigest()
                 certSha1 = sha1(certBin).hexdigest()
