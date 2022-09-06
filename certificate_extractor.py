@@ -15,6 +15,8 @@ from sys import argv as sys_argv
 from json import dumps as json_dumps
 
 hashList = set()
+saveCert = True
+certFileName = 'sha1'
 abandonFields = [
     '',
     'handshake_certificate',
@@ -24,10 +26,9 @@ abandonFields = [
 
 if __name__== '__main__':
     pcapFile = sys_argv[1]
-    outputDir = sys_argv[2] if len(sys_argv)>=3 and os_path.isdir(sys_argv[2]) else os_path.dirname(sys_argv[1])
+    outputDir = sys_argv[2] if len(sys_argv)>=3 and os_path.isdir(sys_argv[2]) else os_path.dirname(pcapFile)
     
     for pkt in filter(lambda pkt:"tls" in pkt, FileCapture(pcapFile)):
-        # just ignore errors
         try:
             if all(
                 [
@@ -37,29 +38,39 @@ if __name__== '__main__':
             ):
                 tlsLayer = pkt['tls']
                 certBin = bytes.fromhex(tlsLayer.handshake_certificate.replace(':',""))
-                if not certBin: continue
                 certMd5 = md5(certBin).hexdigest()
                 certSha1 = sha1(certBin).hexdigest()
-                if not certMd5 in hashList:
-                    hashList.add(certMd5)
-                    open(os_path.join(outputDir, certMd5+'.cer'), 'wb').write(certBin)
-                    print(
-                        json_dumps.dumps(
+                if certMd5 in hashList or not certBin: continue
+                hashList.add(certMd5)
+                print(
+                    json_dumps(
+                        {
+                            'md5': certMd5,
+                            'sha1': certSha1,
+                            **{
+                                fieldName: getattr(
+                                    tlsLayer,
+                                    fieldName
+                                ) for fieldName in tlsLayer.field_names if hasattr(
+                                    tlsLayer,
+                                    fieldName
+                                ) and fieldName not in abandonFields
+                            }
+                        },
+                        ensure_ascii=False
+                    )
+                )
+                if saveCert:
+                    open(
+                        os_path.join(
+                            outputDir,
                             {
                                 'md5': certMd5,
-                                'sha1': certSha1,
-                                **{
-                                    fieldName: getattr(
-                                        tlsLayer,
-                                        fieldName
-                                    ) for fieldName in tlsLayer.field_names if hasattr(
-                                        tlsLayer,
-                                        fieldName
-                                    ) and fieldName not in abandonFields
-                                }
-                            },
-                            ensure_ascii=False
-                        )
-                    )
+                                'sha1': certSha1
+                            }.get(certFileName, certSha1) + '.cer'
+                        ),
+                        'wb'
+                    ).write(certBin)
         except:
+            # just ignore errors
             continue
