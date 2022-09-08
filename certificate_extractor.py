@@ -1,13 +1,6 @@
 # Command line SSL server certificate dumping tool by Beta-TNT.
 # extracting SSL server certificate (leaf certificate) from PCAP file.
 
-# usage: certificate_extractor.py pcap_file_name [certificate_dir]
-
-# prints certificate info in json format to stdout, ignores duplicated certificate(s).
-# and saves certificate binaries into certificate_dir/[certificate_md5].cer
-# if certificate_dir not provided or invalid, will uses dirname(pcap_file_name) as default
-# you can redirect stdout into a file for further uses.
-
 from pyshark import FileCapture
 from hashlib import md5, sha1
 from os import path as os_path
@@ -25,8 +18,19 @@ abandonFields = [
 ]
 
 if __name__== '__main__':
-    pcapFile = sys_argv[1]
-    outputDir = sys_argv[2] if len(sys_argv)>=3 and os_path.isdir(sys_argv[2]) else os_path.dirname(pcapFile)
+    if len(sys_argv) <= 1:
+        print("Usage: %s pcap_file_name [certificate_dir]" % os_path.split(__file__)[1])
+        print("Print certificate(s) info extracted from pcap file in json format to stdout,")
+        print("and ignore duplicated certificate(s).")
+        print("Save certificate(s) into certificate_dir/[certificate_sha1].cer")
+        print("Will not save cert file if certificate_dir is not specified, print info only in that case.")
+        print("you can redirect stdout into a file for further uses.")
+        exit()
+
+    pcapFile, outputDir = [*sys_argv, ""][1:3]
+
+    if outputDir and not os_path.isdir(outputDir):
+        raise FileNotFoundError('output dir "%s" is not valid.')
     
     for pkt in filter(lambda pkt:"tls" in pkt, FileCapture(pcapFile)):
         try:
@@ -39,15 +43,17 @@ if __name__== '__main__':
                 ]
             ):
                 certBin = bytes.fromhex(tlsLayer.handshake_certificate.replace(':',""))
-                certMd5 = md5(certBin).hexdigest()
-                certSha1 = sha1(certBin).hexdigest()
-                if certMd5 in hashList or not certBin: continue
-                hashList.add(certMd5)
+                certHashes = {
+                    'md5': md5(certBin).hexdigest(),
+                    'sha1': sha1(certBin).hexdigest()
+                }
+                keyHash = certHashes.get(certFileName, certHashes['sha1'])
+                if keyHash in hashList or not certBin: continue
+                hashList.add(keyHash)
                 print(
                     json_dumps(
                         {
-                            'md5': certMd5,
-                            'sha1': certSha1,
+                            **certHashes,
                             **{
                                 fieldName: getattr(
                                     tlsLayer,
@@ -61,14 +67,11 @@ if __name__== '__main__':
                         ensure_ascii=False
                     )
                 )
-                if saveCert:
+                if saveCert and outputDir:
                     open(
                         os_path.join(
                             outputDir,
-                            {
-                                'md5': certMd5,
-                                'sha1': certSha1
-                            }.get(certFileName, certSha1) + '.cer'
+                            keyHash + '.cer'
                         ),
                         'wb'
                     ).write(certBin)
