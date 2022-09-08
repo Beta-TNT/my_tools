@@ -28,9 +28,8 @@ if __name__== '__main__':
         exit()
 
     pcapFile, outputDir = [*sys_argv, ""][1:3]
-
     if outputDir and not os_path.isdir(outputDir):
-        raise FileNotFoundError('output dir "%s" is not valid.')
+        raise FileNotFoundError('output dir "%s" is not valid.' % outputDir)
     
     for pkt in filter(lambda pkt:"tls" in pkt, FileCapture(pcapFile)):
         try:
